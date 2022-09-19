@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io/ioutil"
+	"os"
 	"sort"
 	"strings"
 
@@ -11,7 +12,12 @@ import (
 )
 
 func readConfig() string {
-	content, err := ioutil.ReadFile("/home/deviny/.config/alacritty/alacritty.yml")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		panic(err)
+	}
+
+	content, err := ioutil.ReadFile(home + "/.config/alacritty/alacritty.yml")
 	if err != nil {
 		panic(err)
 	}
