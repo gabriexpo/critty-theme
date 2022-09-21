@@ -62,6 +62,8 @@ func getThemeColors(theme string) []string {
 
 		if normal && strings.Contains(l, "'#") { // color row
 			colors = append(colors, strings.Split(l, "'")[1])
+		} else if normal && strings.Contains(l, `"#`) {
+			colors = append(colors, strings.Split(l, `"`)[1])
 		}
 	}
 
@@ -120,13 +122,12 @@ func changeTheme(newTheme string) bool {
 	return true
 }
 
-func footerColorBars() string {
-	currentTheme := getCurrentThemeName()
-	colors := getThemeColors(currentTheme)
+func footerColorBars(theme string) string {
+	colors := getThemeColors(theme)
 
-	footerText := currentTheme + "\n"
+	footerText := theme + "\n"
 	for i := 0; i < 16; i++ {
-		footerText += fmt.Sprintf("[%s]█████", colors[i])
+		footerText += fmt.Sprintf("[%s]████", colors[i])
 		if i == 7 {
 			footerText += "\n"
 		}
@@ -136,6 +137,10 @@ func footerColorBars() string {
 }
 
 func setSearchedItem(s string, list *tview.List) {
+	if s == "" {
+		return
+	}
+
 	for i := 0; i < list.GetItemCount(); i++ {
 		if text, _ := list.GetItemText(i); strings.Contains(text, s) {
 			list.SetCurrentItem(i)
@@ -165,10 +170,17 @@ func main() {
 		list.AddItem(t, "", rune(i+int('a')), nil)
 	}
 
-	footer := tview.NewTextView().
+	footer_left := tview.NewTextView().
 		SetTextAlign(tview.AlignCenter).
 		SetDynamicColors(true).
-		SetText(footerColorBars())
+		SetText("Current: " + footerColorBars(getCurrentThemeName()))
+
+	selected_theme, _ := list.GetItemText(list.GetCurrentItem())
+
+	footer_right := tview.NewTextView().
+		SetTextAlign(tview.AlignCenter).
+		SetDynamicColors(true).
+		SetText("Selected: " + footerColorBars(selected_theme))
 
 	input := tview.NewInputField().
 		SetLabel("Search theme: ").
@@ -191,10 +203,14 @@ func main() {
 			if !ok {
 				panic("!ok")
 			}
-			footer.SetText(footerColorBars())
+			footer_left.SetText("Current: " + footerColorBars(t))
 		}
 
 		return event
+	})
+
+	list.SetChangedFunc(func(index int, text, secText string, shortcut rune) {
+		footer_right.SetText("Selected: " + footerColorBars(text))
 	})
 
 	input.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
@@ -209,12 +225,13 @@ func main() {
 
 	outer_grid := tview.NewGrid().
 		SetRows(6, 1, 0, 1, 4, 7).
-		SetColumns(50, 0, 50).
+		SetColumns(50, 0, 0, 50).
 		SetBorders(true).
-		AddItem(title, 1, 1, 1, 1, 0, 0, false).
-		AddItem(list, 2, 1, 1, 1, 0, 0, false).
-		AddItem(input, 3, 1, 1, 1, 0, 0, true).
-		AddItem(footer, 4, 1, 1, 1, 0, 0, false)
+		AddItem(title, 1, 1, 1, 2, 0, 0, false).
+		AddItem(list, 2, 1, 1, 2, 0, 0, false).
+		AddItem(input, 3, 1, 1, 2, 0, 0, true).
+		AddItem(footer_left, 4, 1, 1, 1, 0, 0, false).
+		AddItem(footer_right, 4, 2, 1, 1, 0, 0, false)
 
 	app.SetRoot(outer_grid, true).EnableMouse(true)
 
