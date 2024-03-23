@@ -1,119 +1,129 @@
 package main
 
 import (
+	"io/fs"
 	"io/ioutil"
+	"log"
 	"os"
-	"sort"
-	"strings"
+	fp "path/filepath"
+
+	. "github.com/gabriexpo/go-functional"
+	toml "github.com/pelletier/go-toml/v2"
 )
 
-func readConfig() string {
+type ColorScheme struct {
+	colors map[string]map[string]string
+}
+
+type data struct {
+	schemes interface{}
+}
+
+func readColorSchemes(file string) map[string]ColorScheme {
 	homedir, err := os.UserHomeDir()
 	if err != nil {
 		panic(err)
 	}
 
-	content, err := ioutil.ReadFile(homedir + "/.config/alacritty/alacritty.yml")
+	if file == "" {
+		file = fp.Join(homedir, ".config", "alacritty", "color_schemes.toml")
+	}
+
+	content, err := ioutil.ReadFile(file)
 	if err != nil {
 		panic(err)
 	}
 
-	return string(content)
+	return parseTOMLColorSchemes(content)
 }
 
-// Read the configuration file, find the current theme name and return it
-func getCurrentThemeName() string {
-	lines := strings.Split(readConfig(), "\n")
+func parseTOMLColorSchemes(content []byte) map[string]ColorScheme {
 
-	for _, l := range lines {
-		if strings.HasPrefix(l, "colors:") {
-			return l[9:]
+	var s map[string]interface{}
+	toml.Unmarshal([]byte(content), &s)
+
+	return parseUnmarshalledMap(s)
+}
+
+func parseUnmarshalledMap(unmarshalled map[string]interface{}) map[string]ColorScheme {
+
+	m := MapMap(func(x interface{}) map[string]interface{} {
+		return x.(map[string]interface{})
+	}, unmarshalled["schemes"].(map[string]interface{}))
+
+	colorSchemes := make(map[string]ColorScheme)
+	for k, v := range m { // colorschemes
+		cs := parseColorScheme(v)
+
+		colorSchemes[k] = cs
+	}
+
+	return colorSchemes
+
+}
+
+func parseColorScheme(m map[string]interface{}) ColorScheme {
+
+	cs := ColorScheme{colors: make(map[string]map[string]string)}
+	// fmt.Println(k)
+
+	for ki, vi := range m { // bright, normal, cursor, primary
+		c := vi.(map[string]interface{})
+		cs.colors[ki] = make(map[string]string)
+
+		for kii, vii := range c { // black, blue, cyan, green, etc...
+			switch m := vii.(type) {
+			case string:
+				cs.colors[ki][kii] = m
+			default:
+				log.Fatalf("Error during decoding of: %v", m)
+			}
 		}
 	}
 
-	panic("color config not found...")
+	return cs
 }
 
-// Read the config file and find the given theme colors
-func getThemeColors(theme string) []string {
-	lines := strings.Split(readConfig(), "\n")
+func getCurrentConfig() (map[string]interface{}, error) {
+	cfgFile := alacrittyConfigFile()
 
-	inTheme := false
-	normal := false
-	colors := []string{}
-
-	for i := 0; i < len(lines); i++ {
-		l := lines[i]
-		if inTheme && strings.Contains(l, "&") {
-			return colors
-		}
-
-		if strings.Contains(l, theme) {
-			inTheme = true
-		}
-
-		if inTheme && strings.Contains(l, "normal:") { // normal: row, start listening
-			normal = true
-		}
-
-		if normal && strings.Contains(l, "'#") { // color row
-			colors = append(colors, strings.Split(l, "'")[1])
-		} else if normal && strings.Contains(l, `"#`) {
-			colors = append(colors, strings.Split(l, `"`)[1])
-		}
+	content, err := ioutil.ReadFile(cfgFile)
+	if err != nil {
+		return nil, err
 	}
 
-	return colors
-}
-
-func getThemesList() []string {
-	lines := strings.Split(readConfig(), "\n")
-
-	schemes := false
-	list := []string{}
-
-	for _, l := range lines {
-		if strings.Contains(l, "schemes:") {
-			schemes = true
-		}
-
-		if schemes && strings.Contains(l, ": &") {
-			list = append(list, strings.TrimSpace(strings.Split(l, ":")[0]))
-		}
-
-		if schemes && strings.Contains(l, "colors: *") {
-			sort.Slice(list, func(i, j int) bool {
-				return list[i] < list[j]
-			})
-			return list
-		}
+	var cfg interface{}
+	err = toml.Unmarshal(content, &cfg)
+	if err != nil {
+		return nil, err
 	}
 
-	return list
+	cfgMap := cfg.(map[string]interface{})
+
+	return cfgMap, nil
 }
 
-// Change Alacritty theme to newTheme, return true if change goes well
-func changeTheme(newTheme string) bool {
+func setTheme(cs ColorScheme, cfg map[string]interface{}) error {
 
+	cfgFile := alacrittyConfigFile()
+
+	cfg["colors"] = cs.colors
+
+	data, err := toml.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+
+	err = ioutil.WriteFile(cfgFile, data, fs.FileMode(os.O_WRONLY))
+
+	return nil
+}
+
+func alacrittyConfigFile() string {
 	homedir, err := os.UserHomeDir()
 	if err != nil {
 		panic(err)
 	}
 
-	lines := strings.Split(readConfig(), "\n")
-	for i, l := range lines {
-		if strings.Contains(l, "colors: *") {
-			lines[i] = strings.Split(l, "*")[0] + "*" + newTheme
-			break
-		}
-	}
-
-	newContent := []byte(strings.Join(lines, "\n"))
-
-	err = ioutil.WriteFile(homedir+"/.config/alacritty/alacritty.yml", newContent, 0644)
-	if err != nil {
-		return false
-	}
-
-	return true
+	return fp.Join(homedir, ".config", "alacritty", "alacritty.toml")
 }

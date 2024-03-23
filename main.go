@@ -2,21 +2,26 @@ package main
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
+	"github.com/gabriexpo/go-functional"
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
 
-func generateFooterColorBars(theme string) string {
-	colors := getThemeColors(theme)
+func generateFooterColorBars(theme ColorScheme, name string) string {
 
-	footerText := theme + "\n"
-	for i := 0; i < 16; i++ {
-		footerText += fmt.Sprintf("[%s]████", colors[i])
-		if i == 7 {
-			footerText += "\n"
-		}
+	footerText := name + "\n"
+
+	for _, v := range theme.colors["normal"] {
+		footerText += fmt.Sprintf("[%s]████", v)
+	}
+
+	footerText += "\n"
+
+	for _, v := range theme.colors["bright"] {
+		footerText += fmt.Sprintf("[%s]████", v)
 	}
 
 	return footerText
@@ -45,9 +50,21 @@ func main() {
 		SetDynamicColors(true).
 		SetText("[yellow]CRITTY-THEME")
 
-	themes := getThemesList()
+	themes := readColorSchemes("")
 
-	list := getListItem(themes, app)
+	themesNames := functional.ExtractKeys(themes)
+	sort.Slice(themesNames, func(i, j int) bool {
+		return themesNames[i] < themesNames[j]
+	})
+
+	cfg, err := getCurrentConfig()
+	if err != nil {
+		panic(err.Error())
+	}
+
+	currentTheme := parseColorScheme(cfg["colors"].(map[string]interface{}))
+
+	list := getListItem(themesNames, app)
 
 	input := getInputField(app)
 
@@ -56,32 +73,35 @@ func main() {
 	footer_left := tview.NewTextView().
 		SetTextAlign(tview.AlignCenter).
 		SetDynamicColors(true).
-		SetText("Current: " + generateFooterColorBars(getCurrentThemeName()))
+		SetText("Current: " + generateFooterColorBars(currentTheme, "current"))
 
 	footer_right := tview.NewTextView().
 		SetTextAlign(tview.AlignCenter).
 		SetDynamicColors(true).
-		SetText("Selected: " + generateFooterColorBars(selected_theme))
+		SetText("Selected: " + generateFooterColorBars(themes[selected_theme], selected_theme))
 
 	list.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Key() == tcell.KeyTab {
 			list.Blur()
 			input.Focus(nil)
+
 			return nil
 		} else if event.Key() == tcell.KeyEnter {
+
 			t, _ := list.GetItemText(list.GetCurrentItem())
-			ok := changeTheme(t)
-			if !ok {
-				panic("!ok")
+			err := setTheme(themes[t], cfg)
+			if err != nil {
+				panic(err)
 			}
-			footer_left.SetText("Current: " + generateFooterColorBars(t))
+
+			footer_left.SetText("Current: " + generateFooterColorBars(themes[t], t))
 		}
 
 		return event
 	})
 
 	list.SetChangedFunc(func(index int, text, secText string, shortcut rune) {
-		footer_right.SetText("Selected: " + generateFooterColorBars(text))
+		footer_right.SetText("Selected: " + generateFooterColorBars(themes[text], text))
 	})
 
 	input.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
